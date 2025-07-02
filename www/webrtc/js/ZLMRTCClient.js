@@ -12,7 +12,9 @@ var ZLMRTCClient = (function (exports) {
 	  WEBRTC_ON_DATA_CHANNEL_CLOSE: 'WEBRTC_ON_DATA_CHANNEL_CLOSE',
 	  WEBRTC_ON_DATA_CHANNEL_ERR: 'WEBRTC_ON_DATA_CHANNEL_ERR',
 	  WEBRTC_ON_DATA_CHANNEL_MSG: 'WEBRTC_ON_DATA_CHANNEL_MSG',
-	  CAPTURE_STREAM_FAILED: 'CAPTURE_STREAM_FAILED'
+	  CAPTURE_STREAM_FAILED: 'CAPTURE_STREAM_FAILED',
+	  WEBRTC_ON_DECODE_INFO: 'WEBRTC_ON_DECODE_INFO',
+	  WEBRTC_ON_BITRATE_INFO: 'WEBRTC_ON_BITRATE_INFO'
 	};
 
 	const VERSION$1 = '1.1.2';
@@ -9020,6 +9022,9 @@ var ZLMRTCClient = (function (exports) {
 	    this._localStream = null;
 	    this._tracks = [];
 	    this.pc = new RTCPeerConnection(null);
+    this._statsTimer = null;
+    this._lastStats = null;
+    this._statsInterval = 1000; // 1秒收集一次统计信息
 	    this.pc.onicecandidate = this.e.onicecandidate;
 	    this.pc.onicecandidateerror = this.e.onicecandidateerror;
 	    this.pc.ontrack = this.e.ontrack;
@@ -9225,6 +9230,7 @@ var ZLMRTCClient = (function (exports) {
 	      this.options.element.srcObject = event.streams[0];
 	      this._remoteStream = event.streams[0];
 	      this.dispatch(Events$1.WEBRTC_ON_REMOTE_STREAMS, this._remoteStream);
+      this._startStatsCollection();
 	    } else {
 	      if (this.pc.getReceivers().length == this._tracks.length) {
 	        log(this.TAG, 'play remote stream ');
@@ -9233,6 +9239,7 @@ var ZLMRTCClient = (function (exports) {
 	          this.options.element.srcObject = this._remoteStream;
 	        }
 	        this.dispatch(Events$1.WEBRTC_ON_REMOTE_STREAMS, this._remoteStream);
+        this._startStatsCollection();
 	      } else {
 	        error(this.TAG, 'wait stream track finish');
 	      }
@@ -9314,6 +9321,7 @@ var ZLMRTCClient = (function (exports) {
 	    }
 	  }
 	  close() {
+	    this._stopStatsCollection();
 	    this.closeDataChannel();
 	    if (this.pc) {
 	      this.pc.close();
@@ -9342,6 +9350,132 @@ var ZLMRTCClient = (function (exports) {
 	  }
 	  get localStream() {
 	    return this._localStream;
+	  }
+
+	  /**
+	   * 开始统计信息收集
+	   */
+	  _startStatsCollection() {
+	    if (this._statsTimer) {
+	      return; // 已经在收集中
+	    }
+
+	    this._statsTimer = setInterval(() => {
+	      this._collectStats();
+	    }, this._statsInterval);
+
+	    log(this.TAG, '开始收集WebRTC统计信息');
+	  }
+
+	  /**
+	   * 停止统计信息收集
+	   */
+	  _stopStatsCollection() {
+	    if (this._statsTimer) {
+	      clearInterval(this._statsTimer);
+	      this._statsTimer = null;
+	      this._lastStats = null;
+	      log(this.TAG, '停止收集WebRTC统计信息');
+	    }
+	  }
+
+	  /**
+	   * 收集统计信息
+	   */
+	  _collectStats() {
+	    if (!this.pc || this.pc.connectionState !== 'connected') {
+	      return;
+	    }
+
+	    this.pc.getStats().then(stats => {
+	      this._processStats(stats);
+	    }).catch(error => {
+	      error(this.TAG, '获取WebRTC统计信息失败:', error);
+	    });
+	  }
+
+	  /**
+	   * 处理统计信息
+	   */
+	  _processStats(stats) {
+	    const currentTime = Date.now();
+	    let videoDecodeInfo = null;
+	    let bitrateInfo = null;
+
+	    stats.forEach(stat => {
+	      // 处理视频解码信息
+	      if (stat.type === 'inbound-rtp' && stat.mediaType === 'video') {
+	        videoDecodeInfo = {
+	          codecName: stat.codecId ? this._getCodecName(stats, stat.codecId) : 'unknown',
+	          decoderImplementation: stat.decoderImplementation || 'unknown',
+	          framesDecoded: stat.framesDecoded || 0,
+	          framesDropped: stat.framesDropped || 0,
+	          framesReceived: stat.framesReceived || 0,
+	          frameWidth: stat.frameWidth || 0,
+	          frameHeight: stat.frameHeight || 0,
+	          framesPerSecond: stat.framesPerSecond || 0,
+	          keyFramesDecoded: stat.keyFramesDecoded || 0,
+	          totalDecodeTime: stat.totalDecodeTime || 0,
+	          totalInterFrameDelay: stat.totalInterFrameDelay || 0,
+	          totalSquaredInterFrameDelay: stat.totalSquaredInterFrameDelay || 0
+	        };
+
+	        // 计算码率信息
+	        if (this._lastStats && this._lastStats.videoStat) {
+	          const timeDiff = (currentTime - this._lastStats.timestamp) / 1000; // 秒
+	          const bytesDiff = (stat.bytesReceived || 0) - (this._lastStats.videoStat.bytesReceived || 0);
+	          const packetsDiff = (stat.packetsReceived || 0) - (this._lastStats.videoStat.packetsReceived || 0);
+
+	          if (timeDiff > 0) {
+	            bitrateInfo = {
+	              videoBitrate: Math.round((bytesDiff * 8) / timeDiff), // bps
+	              videoPacketRate: Math.round(packetsDiff / timeDiff), // packets per second
+	              packetsLost: stat.packetsLost || 0,
+	              packetLossRate: stat.packetsReceived > 0 ? ((stat.packetsLost || 0) / stat.packetsReceived * 100).toFixed(2) : 0,
+	              jitter: stat.jitter || 0,
+	              roundTripTime: stat.roundTripTime || 0
+	            };
+	          }
+	        }
+
+	        // 保存当前统计信息用于下次计算
+	        this._lastStats = {
+	          timestamp: currentTime,
+	          videoStat: {
+	            bytesReceived: stat.bytesReceived || 0,
+	            packetsReceived: stat.packetsReceived || 0,
+	            packetsLost: stat.packetsLost || 0
+	          }
+	        };
+	      }
+	    });
+
+	    // 分发解码信息事件
+	    if (videoDecodeInfo) {
+	      this.dispatch(Events$1.WEBRTC_ON_DECODE_INFO, videoDecodeInfo);
+	    }
+
+	    // 分发码率信息事件
+	    if (bitrateInfo) {
+	      this.dispatch(Events$1.WEBRTC_ON_BITRATE_INFO, bitrateInfo);
+	    }
+	  }
+
+	  /**
+	   * 获取编解码器名称
+	   */
+	  _getCodecName(stats, codecId) {
+	    let codecName = 'unknown';
+	    stats.forEach(stat => {
+	      if (stat.type === 'codec' && stat.id === codecId) {
+	        codecName = stat.mimeType || stat.codecType || 'unknown';
+	        // 提取编解码器名称，如 "video/H264" -> "H264"
+	        if (codecName.includes('/')) {
+	          codecName = codecName.split('/')[1];
+	        }
+	      }
+	    });
+	    return codecName;
 	  }
 	}
 

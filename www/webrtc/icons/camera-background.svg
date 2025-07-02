@@ -1,0 +1,18 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- 摄像头底座 -->
+  <rect x="8" y="18" width="8" height="3" rx="1" fill="#666666" opacity="0.4"/>
+  <!-- 摄像头支架 -->
+  <rect x="11" y="15" width="2" height="4" fill="#666666" opacity="0.4"/>
+  <!-- 摄像头球体外壳 -->
+  <circle cx="12" cy="10" r="7" fill="none" stroke="#888888" stroke-width="1.5" opacity="0.4"/>
+  <!-- 摄像头球体内部 -->
+  <circle cx="12" cy="10" r="5.5" fill="#333333" opacity="0.3"/>
+  <!-- 镜头外圈 -->
+  <circle cx="12" cy="10" r="4" fill="none" stroke="#999999" stroke-width="1" opacity="0.5"/>
+  <!-- 镜头 -->
+  <circle cx="12" cy="10" r="3" fill="#444444" opacity="0.6"/>
+  <!-- 镜头中心 -->
+  <circle cx="12" cy="10" r="1.5" fill="#222222" opacity="0.8"/>
+  <!-- 镜头反光点 -->
+  <circle cx="11" cy="9" r="0.5" fill="#888888" opacity="0.6"/>
+</svg>

@@ -1,0 +1,6 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- 外围边框线 -->
+  <rect x="2" y="2" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+  <!-- 内部大框 -->
+  <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor"/>
+</svg>
